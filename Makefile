@@ -39,7 +39,7 @@ torture-logs   :=
 # custom elf bin to run with sim or sim-verilator
 elf_file        ?= tmp/riscv-tests/build/benchmarks/dhrystone.riscv
 # board name for bitstream generation. Currently supported: kc705, genesys2, nexys_video
-BOARD          ?= genesys2
+BOARD          ?= au200
 
 # root path
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -77,12 +77,20 @@ else ifeq ($(BOARD), kc705)
 	CLK_PERIOD_NS            := 20
 else ifeq ($(BOARD), vc707)
 	XILINX_PART              := xc7vx485tffg1761-2
-	XILINX_BOARD             := xilinx.com:vc707:part0:1.3
+	XILINX_BOARD             := xilinx.com:vc707:part0:1.4
 	CLK_PERIOD_NS            := 20
 else ifeq ($(BOARD), nexys_video)
 	XILINX_PART              := xc7a200tsbg484-1
 	XILINX_BOARD             := digilentinc.com:nexys_video:part0:1.1
 	CLK_PERIOD_NS            := 40
+else ifeq ($(BOARD), vcu118)
+	XILINX_PART              := xcvu9p-flga2104-2L-e
+	XILINX_BOARD             := xilinx.com:vcu118:part0:2.0
+	CLK_PERIOD_NS            := 20
+else ifeq ($(BOARD), au200)
+	XILINX_PART              := xcu200-fsgd2104-2-e
+	XILINX_BOARD             := xilinx.com:au200:part0:1.3
+	CLK_PERIOD_NS            := 20
 else
 $(error Unknown board - please specify a supported FPGA board)
 endif
@@ -172,7 +180,7 @@ src :=  $(if $(spike-tandem),verif/tb/core/uvma_core_cntrl_pkg.sv)              
         corev_apu/rv_plic/rtl/plic_top.sv                                            \
         corev_apu/riscv-dbg/src/dmi_cdc.sv                                           \
         corev_apu/riscv-dbg/src/dmi_jtag.sv                                          \
-        corev_apu/riscv-dbg/src/dmi_jtag_tap.sv                                      \
+        corev_apu/riscv-dbg/src/dmi_bscane_tap.sv                                     \
         corev_apu/riscv-dbg/src/dm_csrs.sv                                           \
         corev_apu/riscv-dbg/src/dm_mem.sv                                            \
         corev_apu/riscv-dbg/src/dm_sba.sv                                            \
@@ -195,7 +203,8 @@ src :=  $(if $(spike-tandem),verif/tb/core/uvma_core_cntrl_pkg.sv)              
         vendor/pulp-platform/axi/src/axi_demux.sv                                    \
         vendor/pulp-platform/axi/src/axi_xbar.sv                                     \
         vendor/pulp-platform/common_cells/src/cdc_2phase.sv                          \
-        vendor/pulp-platform/common_cells/src/spill_register_flushable.sv            \
+        vendor/pulp-platform/common_cells/src/cdc_2phase_clearable.sv                          \
+		vendor/pulp-platform/common_cells/src/spill_register_flushable.sv            \
         vendor/pulp-platform/common_cells/src/spill_register.sv                      \
         vendor/pulp-platform/common_cells/src/deprecated/fifo_v1.sv                  \
         vendor/pulp-platform/common_cells/src/deprecated/fifo_v2.sv                  \
@@ -236,7 +245,7 @@ uart_src_sv:= corev_apu/fpga/src/apb_uart/src/slib_clock_div.sv     \
 uart_src_sv := $(addprefix $(root-dir), $(uart_src_sv))
 
 fpga_src :=  $(wildcard corev_apu/fpga/src/*.sv) $(wildcard corev_apu/fpga/src/ariane-ethernet/*.sv) common/local/util/tc_sram_fpga_wrapper.sv vendor/pulp-platform/fpga-support/rtl/SyncSpRamBeNx64.sv
-fpga_src := $(addprefix $(root-dir), $(fpga_src)) src/bootrom/bootrom_$(XLEN).sv
+fpga_src := $(addprefix $(root-dir), $(fpga_src)) corev_apu/fpga/src/bootrom/bootrom_$(XLEN).sv
 
 # look for testbenches
 tbs := $(top_level_path) corev_apu/tb/ariane_testharness.sv core/cva6_rvfi.sv
@@ -737,6 +746,10 @@ fpga_filter += $(addprefix $(root-dir), corev_apu/tb/ariane_testharness.sv)
 src/bootrom/bootrom_$(XLEN).sv:
 	$(MAKE) -C corev_apu/fpga/src/bootrom BOARD=$(BOARD) XLEN=$(XLEN) bootrom_$(XLEN).sv
 
+create_proj:
+	sed -i "s|src/bootrom/bootrom|corev_apu/fpga/src/bootrom/bootrom|g" corev_apu/fpga/scripts/add_sources.tcl
+	vivado -source build_project.tcl -mode batch -nojournal -tclargs create_project
+
 fpga: $(ariane_pkg) $(src) $(fpga_src) $(uart_src) $(src_flist)
 	@echo "[FPGA] Generate sources"
 	@echo read_vhdl        {$(uart_src)}    > corev_apu/fpga/scripts/add_sources.tcl
@@ -745,9 +758,20 @@ fpga: $(ariane_pkg) $(src) $(fpga_src) $(uart_src) $(src_flist)
 	@echo read_verilog -sv {$(filter-out $(fpga_filter), $(src))} 	   >> corev_apu/fpga/scripts/add_sources.tcl
 	@echo read_verilog -sv {$(fpga_src)}   >> corev_apu/fpga/scripts/add_sources.tcl
 	@echo "[FPGA] Generate Bitstream"
-	$(MAKE) -C corev_apu/fpga BOARD=$(BOARD) XILINX_PART=$(XILINX_PART) XILINX_BOARD=$(XILINX_BOARD) CLK_PERIOD_NS=$(CLK_PERIOD_NS)
+#	$(MAKE) -C corev_apu/fpga BOARD=$(BOARD) XILINX_PART=$(XILINX_PART) XILINX_BOARD=$(XILINX_BOARD) CLK_PERIOD_NS=$(CLK_PERIOD_NS)
 
 .PHONY: fpga
+
+copy_src: $(ariane_pkg) $(src) $(fpga_src) $(uart_src) $(src_flist)
+	@echo "[COPY_SRC Copy src sources"
+	#sed -i "s|src/bootrom/bootrom|corev_apu/fpga/src/bootrom/bootrom|g" corev_apu/fpga/scripts/add_sources.tcl
+	cp $(uart_src) ./src_ariane_riscv
+	cp $(ariane_pkg) ./src_ariane_riscv
+	cp $(filter-out $(fpga_filter), $(src_flist))  ./src_ariane_riscv
+	cp $(filter-out $(fpga_filter), $(src)) ./src_ariane_riscv
+	cp $(fpga_src) ./src_ariane_riscv
+	@echo "End [COPY_SRC]"
+
 
 build-spike:
 	cd tb/riscv-isa-sim && mkdir -p build && cd build && ../configure --prefix=`pwd`/../install --with-fesvr=$(RISCV) --enable-commitlog && make -j8 install
