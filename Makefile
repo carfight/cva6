@@ -179,7 +179,8 @@ src :=  $(if $(spike-tandem),verif/tb/core/uvma_core_cntrl_pkg.sv)              
         corev_apu/rv_plic/rtl/plic_top.sv                                            \
         corev_apu/riscv-dbg/src/dmi_cdc.sv                                           \
         corev_apu/riscv-dbg/src/dmi_jtag.sv                                          \
-        corev_apu/riscv-dbg/src/dm_csrs.sv                                           \
+        corev_apu/riscv-dbg/src/dmi_jtag_tap.sv                                      \
+		corev_apu/riscv-dbg/src/dm_csrs.sv                                           \
         corev_apu/riscv-dbg/src/dm_mem.sv                                            \
         corev_apu/riscv-dbg/src/dm_sba.sv                                            \
         corev_apu/riscv-dbg/src/dm_top.sv                                            \
